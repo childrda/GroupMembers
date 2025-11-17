@@ -6,6 +6,7 @@ A Laravel 11 application that allows users to search Google Workspace groups and
 
 - **Google OAuth Authentication**: Users sign in with their Google account
 - **Authorization Check**: Only users in the database can access the application
+- **Admin User Management**: Admin users can create, edit, and delete users via a web interface
 - **Recursive Group Expansion**: Automatically expands nested groups to show all members
 - **Duplicate Removal**: Removes duplicate users and shows which groups they belong to
 - **Pagination**: Results are paginated (50 per page) for better performance
@@ -17,30 +18,230 @@ A Laravel 11 application that allows users to search Google Workspace groups and
 
 ## Requirements
 
+- Ubuntu Server (20.04 LTS or later recommended)
 - PHP 8.2 or higher
+- Apache 2.4+
+- MySQL 8.0+ or MariaDB 10.6+
 - Composer
 - Google Workspace account with admin access
 - Google OAuth credentials
 - Google Service Account with domain-wide delegation
 
-## Installation
+## Server Installation (Ubuntu)
 
-1. Clone the repository and install dependencies:
+This guide assumes you're starting with a fresh Ubuntu server installation.
+
+### 1. Update System Packages
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+```
+
+### 2. Install Apache
+
+```bash
+sudo apt install apache2 -y
+sudo systemctl enable apache2
+sudo systemctl start apache2
+```
+
+Verify Apache is running:
+```bash
+sudo systemctl status apache2
+```
+
+### 3. Install MySQL
+
+```bash
+sudo apt install mysql-server -y
+sudo systemctl enable mysql
+sudo systemctl start mysql
+```
+
+Secure MySQL installation (follow prompts):
+```bash
+sudo mysql_secure_installation
+```
+
+Create a database and user for the application:
+```bash
+sudo mysql -u root -p
+```
+
+In the MySQL prompt:
+```sql
+CREATE DATABASE groupmembers CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'groupmembers'@'localhost' IDENTIFIED BY 'your_strong_password_here';
+GRANT ALL PRIVILEGES ON groupmembers.* TO 'groupmembers'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+### 4. Install PHP 8.2 and Required Extensions
+
+```bash
+sudo apt install software-properties-common -y
+sudo add-apt-repository ppa:ondrej/php -y
+sudo apt update
+sudo apt install php8.2 php8.2-cli php8.2-common php8.2-mysql php8.2-zip php8.2-gd php8.2-mbstring php8.2-curl php8.2-xml php8.2-bcmath php8.2-fpm php8.2-intl -y
+```
+
+Verify PHP installation:
+```bash
+php -v
+```
+
+### 5. Install Composer
+
+```bash
+cd ~
+curl -sS https://getcomposer.org/installer | php
+sudo mv composer.phar /usr/local/bin/composer
+sudo chmod +x /usr/local/bin/composer
+```
+
+Verify Composer installation:
+```bash
+composer --version
+```
+
+### 6. Install Git
+
+```bash
+sudo apt install git -y
+```
+
+### 7. Enable Required Apache Modules
+
+```bash
+sudo a2enmod rewrite
+sudo a2enmod headers
+sudo systemctl restart apache2
+```
+
+### 8. Configure Apache for Laravel
+
+Create a new Apache virtual host configuration:
+
+```bash
+sudo nano /etc/apache2/sites-available/groupmembers.conf
+```
+
+Add the following configuration (replace `your-domain.com` with your actual domain or server IP):
+
+```apache
+<VirtualHost *:80>
+    ServerName your-domain.com
+    ServerAlias www.your-domain.com
+    DocumentRoot /var/www/groupmembers/public
+
+    <Directory /var/www/groupmembers/public>
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog ${APACHE_LOG_DIR}/groupmembers_error.log
+    CustomLog ${APACHE_LOG_DIR}/groupmembers_access.log combined
+</VirtualHost>
+```
+
+Enable the site and disable the default site:
+
+```bash
+sudo a2ensite groupmembers.conf
+sudo a2dissite 000-default.conf
+sudo systemctl restart apache2
+```
+
+### 9. Clone the Application
+
+```bash
+cd /var/www
+sudo git clone https://github.com/childrda/GroupMembers.git groupmembers
+sudo chown -R www-data:www-data /var/www/groupmembers
+cd groupmembers
+```
+
+### 10. Install PHP Dependencies
+
+```bash
+sudo -u www-data composer install --no-dev --optimize-autoloader
+```
+
+### 11. Configure Environment
+
+```bash
+sudo -u www-data cp example.env .env
+sudo nano .env
+```
+
+Update the following in `.env`:
+- `APP_NAME` - Your application name
+- `APP_URL` - Your domain URL (e.g., `http://your-domain.com`)
+- `DB_CONNECTION=mysql`
+- `DB_HOST=127.0.0.1`
+- `DB_PORT=3306`
+- `DB_DATABASE=groupmembers`
+- `DB_USERNAME=groupmembers`
+- `DB_PASSWORD=your_strong_password_here`
+
+### 12. Generate Application Key
+
+```bash
+sudo -u www-data php artisan key:generate
+```
+
+### 13. Set File Permissions
+
+```bash
+sudo chown -R www-data:www-data /var/www/groupmembers
+sudo chmod -R 755 /var/www/groupmembers
+sudo chmod -R 775 /var/www/groupmembers/storage
+sudo chmod -R 775 /var/www/groupmembers/bootstrap/cache
+```
+
+### 14. Run Database Migrations
+
+```bash
+sudo -u www-data php artisan migrate
+```
+
+### 15. (Optional) Set Up SSL with Let's Encrypt
+
+```bash
+sudo apt install certbot python3-certbot-apache -y
+sudo certbot --apache -d your-domain.com -d www.your-domain.com
+```
+
+Follow the prompts to complete SSL setup.
+
+## Application Installation
+
+If you've already completed the server installation above, you can skip to step 3. Otherwise, follow these steps:
+
+1. **Clone the repository:**
+```bash
+git clone https://github.com/childrda/GroupMembers.git
+cd GroupMembers
+```
+
+2. **Install dependencies:**
 ```bash
 composer install
 ```
 
-2. Copy the environment file:
+3. **Copy the environment file:**
 ```bash
 cp example.env .env
 ```
 
-3. Generate application key:
+4. **Generate application key:**
 ```bash
 php artisan key:generate
 ```
 
-4. Run migrations:
+5. **Run migrations:**
 ```bash
 php artisan migrate
 ```
@@ -88,33 +289,63 @@ EMAIL_DOMAIN=yourdomain.com
 
 ### 3. User Authorization
 
-Add authorized users to the `users` table:
+Add authorized users to the `users` table. You can do this via MySQL:
+
+```sql
+mysql -u groupmembers -p groupmembers
+```
+
 ```sql
 INSERT INTO users (name, email, email_verified_at, created_at, updated_at)
 VALUES ('John Doe', 'john@yourdomain.com', NOW(), NOW(), NOW());
 ```
 
-Or use a seeder:
-```php
-php artisan make:seeder UserSeeder
+Or use the admin interface (if you have an admin user) or create an admin user directly:
+
+```sql
+INSERT INTO users (name, email, email_verified_at, isadmin, created_at, updated_at)
+VALUES ('Admin User', 'admin@yourdomain.com', NOW(), 1, NOW(), NOW());
 ```
+
+**Note:** The first admin user must be created via SQL. After that, admin users can manage other users through the web interface at `/admin/users`.
 
 ## Usage
 
-1. Start the development server:
+### Production (Apache)
+
+If you've set up Apache as described above, simply navigate to your domain:
+- `http://your-domain.com` or `https://your-domain.com` (if SSL is configured)
+
+### Development Server
+
+For local development:
 ```bash
 php artisan serve
 ```
 
-2. Navigate to `http://localhost:8000`
-3. Click "Sign in with Google"
-4. If your email is in the database, you'll be redirected to the dashboard
+Then navigate to `http://localhost:8000`
+
+### Using the Application
+
+1. Navigate to your application URL
+2. Click "Sign in with Google"
+3. If your email is in the database, you'll be redirected to the dashboard
+4. **Admin Users:** Access the "Admin" link in the navigation to manage users
 5. Go to "Groups" to search for a Google Workspace group
 6. Enter a group email (e.g., `all-elementary-staff@lcps.k12.va.us`) or just the group name if `EMAIL_DOMAIN` is configured
 7. View the flattened member list with pagination
 8. Use the search box to filter members across all results
 9. Navigate between pages using pagination controls
 10. Download results as CSV if needed
+
+### Admin User Management
+
+Admin users (those with `isadmin = true`) can:
+- View all users at `/admin/users`
+- Create new users
+- Edit existing users (including admin status)
+- Delete users (cannot delete themselves)
+- Access is protected by middleware - only admin users can access these routes
 
 ## API Scopes
 
@@ -128,15 +359,47 @@ The application requires the following Google Directory API scopes:
 - The service account JSON file should be kept secure and never committed to version control
 - Only authorized users (those in the database) can access the application
 - The application uses Laravel's built-in session-based authentication
+- Admin routes are protected by middleware - only users with `isadmin = true` can access them
+- Keep your `.env` file secure and never commit it to version control
+- Use strong passwords for your MySQL database user
+- Regularly update your system packages: `sudo apt update && sudo apt upgrade`
+- Consider setting up a firewall (UFW) to restrict access to necessary ports only
 
 ## Troubleshooting
 
+### Apache Issues
+
+**"403 Forbidden" error:**
+- Check file permissions: `sudo chown -R www-data:www-data /var/www/groupmembers`
+- Verify Apache can read the directory: `sudo chmod -R 755 /var/www/groupmembers`
+- Ensure `mod_rewrite` is enabled: `sudo a2enmod rewrite && sudo systemctl restart apache2`
+
+**"500 Internal Server Error":**
+- Check Apache error logs: `sudo tail -f /var/log/apache2/error.log`
+- Check Laravel logs: `tail -f /var/www/groupmembers/storage/logs/laravel.log`
+- Verify file permissions on `storage` and `bootstrap/cache` directories
+
+### Database Connection Issues
+
+**"SQLSTATE[HY000] [2002] No such file or directory":**
+- Ensure MySQL is running: `sudo systemctl status mysql`
+- Check your `.env` file has correct database credentials
+- Verify database exists: `mysql -u root -p -e "SHOW DATABASES;"`
+
 ### "Google service account credentials file not found"
 - Ensure the JSON file is placed at `storage/app/google-credentials.json`
-- Check file permissions
+- Check file permissions: `sudo chmod 600 storage/app/google-credentials.json`
+- Verify ownership: `sudo chown www-data:www-data storage/app/google-credentials.json`
 
 ### "Your account is not authorized"
 - Add your email to the `users` table in the database
+- Verify the email matches exactly (case-sensitive)
+
+### Permission Issues
+
+**"The stream or file could not be opened":**
+- Fix storage permissions: `sudo chmod -R 775 storage bootstrap/cache`
+- Fix ownership: `sudo chown -R www-data:www-data storage bootstrap/cache`
 
 ### API Errors
 
@@ -168,19 +431,29 @@ group-members/
 ├── app/
 │   ├── Http/
 │   │   ├── Controllers/
-│   │   │   ├── Auth/GoogleAuthController.php
+│   │   │   ├── Admin/
+│   │   │   │   └── AdminUserController.php
+│   │   │   ├── Auth/
+│   │   │   │   └── GoogleAuthController.php
 │   │   │   ├── DashboardController.php
 │   │   │   └── GroupController.php
 │   │   └── Middleware/
+│   │       ├── AdminMiddleware.php
 │   │       └── CheckAuthorizedUser.php
+│   ├── Models/
+│   │   └── User.php
 │   └── Services/
 │       └── GoogleDirectoryService.php
 ├── config/
 │   └── services.php (Google OAuth & Service Account config)
 ├── database/
-│   └── migrations/ (Users table)
+│   └── migrations/
+│       ├── 0001_01_01_000000_create_users_table.php
+│       └── 2024_01_01_000003_add_isadmin_to_users_table.php
 ├── resources/
 │   └── views/
+│       ├── admin/
+│       │   └── users/ (index, create, edit)
 │       ├── auth/ (login, unauthorized)
 │       ├── groups/ (index, results)
 │       └── layouts/ (app.blade.php)
