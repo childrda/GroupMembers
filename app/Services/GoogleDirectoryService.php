@@ -77,6 +77,11 @@ class GoogleDirectoryService
                     try {
                         $user = $this->service->users->get($memberEmail);
                         
+                        // Skip disabled/suspended accounts
+                        if ($user->getSuspended() === true) {
+                            continue;
+                        }
+                        
                         // Safely extract organization data
                         $title = null;
                         $department = null;
@@ -102,19 +107,9 @@ class GoogleDirectoryService
                         ];
                     } catch (\Exception $e) {
                         Log::warning("Could not fetch user details for {$memberEmail}: " . $e->getMessage());
-                        // Still add the member with basic info
-                        // Extract name from email (first part before @) as fallback
-                        $nameFromEmail = explode('@', $memberEmail)[0];
-                        $nameFromEmail = str_replace(['.', '_'], ' ', $nameFromEmail);
-                        $nameFromEmail = ucwords($nameFromEmail);
-                        
-                        $members[] = [
-                            'email' => $memberEmail,
-                            'name' => $nameFromEmail ?: 'Unknown',
-                            'title' => null,
-                            'department' => null,
-                            'source_group' => $sourceGroup ?? $groupEmail,
-                        ];
+                        // Skip users we can't fetch details for (they may be disabled or deleted)
+                        // Don't add them to the members list
+                        continue;
                     }
                 } elseif ($memberType === 'GROUP') {
                     // Recursively get members of nested group
